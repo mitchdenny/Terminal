@@ -18,7 +18,8 @@ namespace Linux
 
 TerminalWindow::TerminalWindow()
 {
-    _fontDesc = pango_font_description_from_string("Monospace 11");
+    _settings.LoadDefaults();
+    _fontDesc = pango_font_description_from_string(_settings.GetPangoFontString().c_str());
 }
 
 TerminalWindow::~TerminalWindow()
@@ -119,6 +120,14 @@ void TerminalWindow::SetupWindow(GtkApplication* app)
         auto& renderSettings = _terminal.GetRenderSettings();
         _renderer = new Microsoft::Console::Render::Renderer(renderSettings, &_terminal);
         _terminal.Create(til::size{ static_cast<til::CoordType>(_cols), static_cast<til::CoordType>(_rows) }, 9001, *_renderer);
+
+        // Apply color scheme from settings
+        for (int i = 0; i < 16; i++)
+        {
+            renderSettings.SetColorTableEntry(i, TerminalSettings::RgbToColorref(_settings.ansiColors[i]));
+        }
+        renderSettings.SetColorAlias(ColorAlias::DefaultForeground, 256, TerminalSettings::RgbToColorref(_settings.foreground));
+        renderSettings.SetColorAlias(ColorAlias::DefaultBackground, 257, TerminalSettings::RgbToColorref(_settings.background));
     }
 
     // Set up PTY connection

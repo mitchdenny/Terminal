@@ -14,6 +14,7 @@
 #include "../../renderer/inc/IRenderData.hpp"
 #include "../../renderer/base/renderer.hpp"
 #include "LinuxPtyConnection.h"
+#include "Settings.h"
 
 #include <gtk/gtk.h>
 #include <pango/pangocairo.h>
@@ -82,5 +83,8 @@ namespace Linux
         std::atomic<bool> _needsRedraw{false};
         std::atomic<bool> _running{true};
         std::string _windowTitle = "Windows Terminal (Linux)";
+
+        // Settings
+        TerminalSettings _settings;
     };
 }
