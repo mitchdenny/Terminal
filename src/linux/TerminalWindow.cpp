@@ -709,13 +709,36 @@ void TerminalWindow::HandleKeyPress(guint keyval, guint keycode, GdkModifierType
 gboolean TerminalWindow::OnScrolled(GtkEventControllerScroll* controller, double dx, double dy, gpointer userData)
 {
     auto* self = static_cast<TerminalWindow*>(userData);
-    self->HandleScroll(dx, dy);
+    auto mods = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+    self->HandleScroll(dx, dy, mods);
     return TRUE;
 }
 
-void TerminalWindow::HandleScroll(double dx, double dy)
+void TerminalWindow::HandleScroll(double dx, double dy, GdkModifierType mods)
 {
     auto lock = _terminal.LockForWriting();
+
+    // When in alt buffer or app is tracking mouse, send as mouse wheel events
+    if (_terminal.IsTrackingMouseInput())
+    {
+        short wheelDelta = static_cast<short>(-dy * WHEEL_DELTA);
+        if (wheelDelta != 0)
+        {
+            Microsoft::Console::VirtualTerminal::TerminalInput::MouseButtonState buttonState{
+                _mouseLeftDown, _mouseMiddleDown, _mouseRightDown
+            };
+            auto output = _terminal.SendMouseEvent(
+                til::point{ 0, 0 }, WM_MOUSEWHEEL, GdkModsToControlKeys(mods), wheelDelta, buttonState);
+            if (output.has_value())
+            {
+                _pty.WriteInput(*output);
+                QueueRedraw();
+                return;
+            }
+        }
+    }
+
+    // Normal scrollback
     int lines = static_cast<int>(dy * 3);
     if (lines != 0)
     {

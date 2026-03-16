@@ -59,7 +59,7 @@ namespace Linux
         void HandleMousePress(int button, int nPress, double x, double y, GdkModifierType mods);
         void HandleMouseRelease(int button, double x, double y, GdkModifierType mods);
         void HandleMouseMove(double x, double y, GdkModifierType mods);
-        void HandleScroll(double dx, double dy);
+        void HandleScroll(double dx, double dy, GdkModifierType mods);
         void HandleResize(int widthPx, int heightPx);
         til::point PixelToCell(double x, double y) const;
         Microsoft::Terminal::Core::ControlKeyStates GdkModsToControlKeys(GdkModifierType mods) const;
