@@ -14,8 +14,10 @@ Abstract:
 #include "LibraryIncludes.h"
 
 #include <cmath>
+#ifndef __linux__
 #define ENABLE_INTSAFE_SIGNED_FUNCTIONS
 #include <intsafe.h>
+#endif
 
 #include <sal.h>
 

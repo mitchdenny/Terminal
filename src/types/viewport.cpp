@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 #include "precomp.h"
-#include "inc/Viewport.hpp"
+#include "inc/viewport.hpp"
 
 using namespace Microsoft::Console::Types;
 

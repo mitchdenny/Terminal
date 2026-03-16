@@ -1,0 +1,8 @@
+/home/midenn/Code/terminal/build/CMakeFiles/terminal_types.dir
+/home/midenn/Code/terminal/build/CMakeFiles/terminal_buffer.dir
+/home/midenn/Code/terminal/build/CMakeFiles/vt_parser.dir
+/home/midenn/Code/terminal/build/CMakeFiles/vt_adapter.dir
+/home/midenn/Code/terminal/build/CMakeFiles/renderer_base.dir
+/home/midenn/Code/terminal/build/CMakeFiles/terminal_core.dir
+/home/midenn/Code/terminal/build/CMakeFiles/edit_cache.dir
+/home/midenn/Code/terminal/build/CMakeFiles/rebuild_cache.dir

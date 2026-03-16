@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvt_parser.a CMakeFiles/vt_parser.dir/src/terminal/parser/base64.cpp.o CMakeFiles/vt_parser.dir/src/terminal/parser/InputStateMachineEngine.cpp.o CMakeFiles/vt_parser.dir/src/terminal/parser/OutputStateMachineEngine.cpp.o CMakeFiles/vt_parser.dir/src/terminal/parser/stateMachine.cpp.o CMakeFiles/vt_parser.dir/src/terminal/parser/tracing.cpp.o
+/usr/bin/ranlib libvt_parser.a

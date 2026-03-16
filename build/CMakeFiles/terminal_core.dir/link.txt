@@ -1,0 +1,2 @@
+/usr/bin/ar qc libterminal_core.a CMakeFiles/terminal_core.dir/src/cascadia/TerminalCore/Terminal.cpp.o CMakeFiles/terminal_core.dir/src/cascadia/TerminalCore/TerminalApi.cpp.o CMakeFiles/terminal_core.dir/src/cascadia/TerminalCore/terminalrenderdata.cpp.o CMakeFiles/terminal_core.dir/src/cascadia/TerminalCore/TerminalSelection.cpp.o
+/usr/bin/ranlib libterminal_core.a

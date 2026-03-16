@@ -27,6 +27,13 @@ Abstract:
 #define NOMINMAX
 #endif
 
+#ifdef __linux__
+
+// Linux: use platform compatibility layer only
+#include "LibraryIncludes.h"
+
+#else // _WIN32
+
 // Windows Header Files:
 #include <windows.h>
 #include <combaseapi.h>
@@ -55,5 +62,7 @@ Abstract:
 #include <conmsgl3.h>
 #include <condrv.h>
 #include <ntcon.h>
+
+#endif // __linux__
 
 // clang-format on

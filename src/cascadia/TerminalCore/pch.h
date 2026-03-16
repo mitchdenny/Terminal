@@ -3,6 +3,10 @@
 
 #pragma once
 
+#ifdef __linux__
+#include <LibraryIncludes.h>
+#include <til.h>
+#else
 // We're suspending the inclusion of til here so that we can include
 // it after some of our C++/WinRT headers.
 #define BLOCK_TIL
@@ -12,3 +16,4 @@
 #include "winrt/Microsoft.Terminal.Core.h"
 
 #include <til.h>
+#endif

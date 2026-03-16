@@ -235,7 +235,11 @@ void Utils::InitializeANSIColorTable(const std::span<COLORREF> table) noexcept
 {
     if (table.size() >= campbellColorTable.size())
     {
-        std::copy_n(campbellColorTable.begin(), campbellColorTable.size(), table.begin());
+        for (size_t i = 0; i < campbellColorTable.size(); i++)
+        {
+            const auto c = campbellColorTable[i];
+            table[i] = c.abgr & 0x00FFFFFFu;
+        }
     }
 }
 
@@ -243,7 +247,11 @@ void Utils::InitializeVT340ColorTable(const std::span<COLORREF> table) noexcept
 {
     if (table.size() >= vt340ColorTable.size())
     {
-        std::copy_n(vt340ColorTable.begin(), vt340ColorTable.size(), table.begin());
+        for (size_t i = 0; i < vt340ColorTable.size(); i++)
+        {
+            const auto c = vt340ColorTable[i];
+            table[i] = c.abgr & 0x00FFFFFFu;
+        }
     }
 }
 
@@ -272,12 +280,12 @@ void Utils::InitializeExtendedColorTable(const std::span<COLORREF> table, const 
             {
                 r = g = b = (r + g + b) / 3;
             }
-            til::at(table, i + 16) = til::color{ r, g, b };
+            til::at(table, i + 16) = til::color{ r, g, b }.abgr & 0x00FFFFFFu;
         }
         for (size_t i = 0; i < 24; i++)
         {
             const auto l = gsl::narrow_cast<uint8_t>(i * 10 + 8);
-            til::at(table, i + 232) = til::color{ l, l, l };
+            til::at(table, i + 232) = til::color{ l, l, l }.abgr & 0x00FFFFFFu;
         }
     }
 }

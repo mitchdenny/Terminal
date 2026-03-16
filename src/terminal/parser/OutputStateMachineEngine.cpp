@@ -970,7 +970,7 @@ bool OutputStateMachineEngine::_GetOscSetColorTable(const std::wstring_view stri
             else if (const auto colorOptional = Utils::ColorFromXTermColor(color))
             {
                 newTableIndexes.push_back(tableIndex);
-                newRgbs.push_back(colorOptional.value());
+                newRgbs.push_back(colorOptional.value().abgr & 0x00FFFFFFu);
             }
         }
     }
@@ -1066,7 +1066,7 @@ bool OutputStateMachineEngine::_GetOscSetColor(const std::wstring_view string,
         }
         else if (const auto colorOptional = Utils::ColorFromXTermColor(part))
         {
-            newRgbs.push_back(colorOptional.value());
+            newRgbs.push_back(colorOptional.value().abgr & 0x00FFFFFFu);
         }
         else
         {

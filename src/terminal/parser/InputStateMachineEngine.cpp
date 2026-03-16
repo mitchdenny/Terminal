@@ -348,7 +348,7 @@ bool InputStateMachineEngine::ActionEscDispatch(const VTID id)
         if (_GenerateKeyFromChar(wch, vk, modifierState))
         {
             // Alt is definitely pressed in the esc+key case.
-            modifierState = WI_SetFlag(modifierState, LEFT_ALT_PRESSED);
+            WI_SetFlag(modifierState, LEFT_ALT_PRESSED);
             _WriteSingleKey(wch, vk, modifierState);
         }
     }
@@ -804,7 +804,7 @@ DWORD InputStateMachineEngine::_GetGenericKeysModifierState(const VTParameters p
     const GenericKeyIdentifiers identifier = parameters.at(0);
     if (identifier <= GenericKeyIdentifiers::Next)
     {
-        modifiers = WI_SetFlag(modifiers, ENHANCED_KEY);
+        WI_SetFlag(modifiers, ENHANCED_KEY);
     }
 
     return modifiers;

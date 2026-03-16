@@ -18,7 +18,9 @@ Abstract:
 // This includes support libraries from the CRT, STL, WIL, and GSL
 #include "LibraryIncludes.h"
 
+#ifndef __linux__
 #include <windows.h>
 #include <wincon.h>
+#endif
 
 #include "../../types/inc/viewport.hpp"
