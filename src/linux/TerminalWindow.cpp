@@ -710,7 +710,7 @@ void TerminalWindow::HandleResize(int widthPx, int heightPx)
         // Resize terminal buffer
         {
             auto lock = _terminal.LockForWriting();
-            _terminal.UserResize(til::size{ static_cast<til::CoordType>(_cols), static_cast<til::CoordType>(_rows) });
+            std::ignore = _terminal.UserResize(til::size{ static_cast<til::CoordType>(_cols), static_cast<til::CoordType>(_rows) });
         }
 
         // Resize PTY
