@@ -80,13 +80,18 @@ namespace Microsoft::Console::Utils
         return buf;
     }
 
-    size_t FindActionableControlCharacter(const wchar_t* str, size_t len) noexcept
+    const wchar_t* FindActionableControlCharacter(const wchar_t* str, const size_t len) noexcept
     {
-        for (size_t i = 0; i < len; i++)
+        const auto end = str + len;
+        for (auto it = str; it < end; ++it)
         {
-            wchar_t c = str[i];
-            if (c < 0x20 || c == 0x7F) return i;
+            auto c = static_cast<uint32_t>(*it);
+            // Match: (c <= 0x1f) || (c >= 0x7f && c <= 0x9f)
+            if (c <= 0x1F || (c >= 0x7F && c <= 0x9F))
+            {
+                return it;
+            }
         }
-        return len;
+        return end;
     }
 }
