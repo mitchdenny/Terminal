@@ -220,8 +220,25 @@ target_link_libraries(integration_test PRIVATE
     fmt::fmt
 )
 
-# TODO: Phase 2 - OpenGL renderer library
-# TODO: Phase 3 - GTK4 terminal widget
-# TODO: Phase 4 - Main executable
+# --- GTK4 Terminal Application ---
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4)
+pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
+
+add_executable(windows-terminal-linux
+    src/linux/main.cpp
+    src/linux/TerminalWindow.cpp
+)
+target_include_directories(windows-terminal-linux PRIVATE
+    ${TERMINAL_SRC}/linux
+    ${TERMINAL_SRC}/cascadia/TerminalCore
+)
+target_link_libraries(windows-terminal-linux PRIVATE
+    terminal_core
+    linux_pty
+    fmt::fmt
+    PkgConfig::GTK4
+    PkgConfig::PANGOCAIRO
+)
 
 message(STATUS "Configured WindowsTerminalLinux for ${CMAKE_SYSTEM_NAME}")
