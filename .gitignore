@@ -285,4 +285,4 @@ profiles.json
 *.swp
 
 # MSBuildCache
-/MSBuildCacheLogs/build-linux/
+build-linux/

@@ -57,6 +57,7 @@ add_compile_options(
     -Wno-changes-meaning       # til::rect::size() vs std::size
     -Wno-deprecated-declarations  # std::codecvt_utf8_utf16
     -fPIC
+    -mavx2                         # Required for SIMD in Row.cpp
 )
 
 # --- Static library: terminal_types ---
@@ -90,7 +91,7 @@ add_library(terminal_buffer STATIC
     src/buffer/out/textBufferCellIterator.cpp
     src/buffer/out/textBufferTextIterator.cpp
     src/buffer/out/TextColor.cpp
-    src/buffer/out/UTextAdapter.cpp
+    # UTextAdapter.cpp excluded - requires ICU library
 )
 target_include_directories(terminal_buffer PUBLIC
     ${TERMINAL_SRC}/buffer/out
@@ -121,7 +122,7 @@ add_library(vt_adapter STATIC
     src/terminal/adapter/adaptDispatch.cpp
     src/terminal/adapter/adaptDispatchGraphics.cpp
     src/terminal/adapter/FontBuffer.cpp
-    src/terminal/adapter/InteractDispatch.cpp
+    # InteractDispatch.cpp excluded - depends on console host ServiceLocator
     src/terminal/adapter/MacroBuffer.cpp
     src/terminal/adapter/PageManager.cpp
     src/terminal/adapter/SixelParser.cpp
@@ -142,7 +143,7 @@ add_library(renderer_base STATIC
     src/renderer/base/FontInfoBase.cpp
     src/renderer/base/fontinfo.cpp
     src/renderer/base/FontInfoDesired.cpp
-    src/renderer/base/FontResource.cpp
+    # FontResource.cpp excluded - uses Win32 font APIs (AddFontMemResourceEx)
     src/renderer/base/RenderEngineBase.cpp
     src/renderer/base/renderer.cpp
     src/renderer/base/RenderSettings.cpp

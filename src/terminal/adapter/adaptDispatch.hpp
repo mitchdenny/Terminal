@@ -30,6 +30,8 @@ class AdapterTest;
 
 namespace Microsoft::Console::VirtualTerminal
 {
+    class SixelParser;
+
     class AdaptDispatch : public ITermDispatch
     {
         using Renderer = Microsoft::Console::Render::Renderer;

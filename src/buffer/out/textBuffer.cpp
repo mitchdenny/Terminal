@@ -2356,7 +2356,7 @@ void TextBuffer::_AppendRTFText(std::string& contentBuilder, const std::wstring_
         {
             // Windows uses unsigned wchar_t - RTF uses signed ones.
             // '?' is the fallback ascii character.
-            fmt::format_to(std::back_inserter(contentBuilder), FMT_COMPILE("\\u{}?"), std::bit_cast<int16_t>(codeUnit));
+            fmt::format_to(std::back_inserter(contentBuilder), FMT_COMPILE("\\u{}?"), static_cast<int16_t>(static_cast<uint16_t>(codeUnit)));
         }
     }
 }

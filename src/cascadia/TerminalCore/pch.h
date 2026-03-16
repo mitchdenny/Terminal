@@ -5,6 +5,8 @@
 
 #ifdef __linux__
 #include <LibraryIncludes.h>
+#include "winrt/Windows.Foundation.h"
+#include "winrt/Microsoft.Terminal.Core.h"
 #include <til.h>
 #else
 // We're suspending the inclusion of til here so that we can include

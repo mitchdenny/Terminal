@@ -58,6 +58,7 @@
 // fmt
 #include <fmt/format.h>
 #include <fmt/compile.h>
+#include <fmt/xchar.h>
 
 // Chromium Numerics (safe math)
 #include <base/numerics/safe_math.h>

@@ -13,6 +13,29 @@
 #include <cerrno>
 #include <stdexcept>
 #include <string>
+#include <utility>
+
+// --- MSVC architecture macros (map GCC to MSVC names) ---
+#if defined(__x86_64__)
+#define _M_X64 100
+#elif defined(__aarch64__)
+#define _M_ARM64 1
+#elif defined(__i386__)
+#define _M_IX86 600
+#elif defined(__arm__)
+#define _M_ARM 7
+#endif
+
+// --- MSVC intrinsics for hash (x86_64) ---
+#if defined(__x86_64__)
+#include <x86intrin.h>
+inline uint64_t _umul128(uint64_t a, uint64_t b, uint64_t* hi)
+{
+    __uint128_t r = static_cast<__uint128_t>(a) * b;
+    *hi = static_cast<uint64_t>(r >> 64);
+    return static_cast<uint64_t>(r);
+}
+#endif
 
 // --- Basic Windows types ---
 using BYTE = uint8_t;
@@ -22,6 +45,7 @@ using UINT = unsigned int;
 using INT = int;
 using LONG = int32_t;
 using ULONG = uint32_t;
+using ULONGLONG = uint64_t;
 using USHORT = uint16_t;
 using SHORT = int16_t;
 using BOOL = int;
@@ -60,6 +84,7 @@ using HDC = void*;
 using HFONT = void*;
 using HBRUSH = void*;
 using HRGN = void*;
+using HKL = void*;
 
 using SIZE_T = size_t;
 using SSIZE_T = ssize_t;
@@ -92,9 +117,18 @@ using LRESULT = intptr_t;
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 
 #define ERROR_UNHANDLED_EXCEPTION 574
+#define ERROR_WRITE_FAULT 29
+#define LF_FACESIZE 32
+#define TMPF_TRUETYPE 0x04
+#define FW_NORMAL 400
+#define DEFAULT_CHARSET 1
+#define OEM_CHARSET 255
+#define FIXED_PITCH 1
+#define FF_DONTCARE 0
 
 // --- COORD and SMALL_RECT (console types) ---
 #define _WINCONTYPES_ 1
+#define _WINDEF_ 1
 
 struct COORD
 {
@@ -108,6 +142,27 @@ struct SMALL_RECT
     SHORT Top;
     SHORT Right;
     SHORT Bottom;
+};
+
+// --- POINT, SIZE, RECT (GDI types used by til::point, til::size, til::rect) ---
+struct POINT
+{
+    LONG x;
+    LONG y;
+};
+
+struct SIZE
+{
+    LONG cx;
+    LONG cy;
+};
+
+struct RECT
+{
+    LONG left;
+    LONG top;
+    LONG right;
+    LONG bottom;
 };
 
 struct CHAR_INFO
@@ -568,6 +623,56 @@ inline HRESULT SizeTToShort(size_t val, SHORT* result) { *result = (SHORT)val; r
 inline HRESULT UIntToSizeT(UINT val, size_t* result) { *result = (size_t)val; return S_OK; }
 inline HRESULT UIntToUShort(UINT val, USHORT* result) { *result = (USHORT)val; return (val > USHRT_MAX) ? E_FAIL : S_OK; }
 
+// Forward declarations
+struct OVERLAPPED;
+
+// --- VirtualAlloc / VirtualFree (use mmap on Linux) ---
+#include <sys/mman.h>
+
+#define MEM_COMMIT 0x00001000
+#define MEM_RESERVE 0x00002000
+#define MEM_DECOMMIT 0x4000
+#define MEM_RELEASE 0x8000
+#define PAGE_READWRITE 0x04
+
+inline void* VirtualAlloc(void* addr, SIZE_T size, DWORD allocType, DWORD protect)
+{
+    if (addr)
+    {
+        // Committing already-reserved pages: on Linux with our malloc-based approach, this is a no-op
+        return addr;
+    }
+    return malloc(size);
+}
+
+inline BOOL VirtualFree(void* addr, SIZE_T size, DWORD freeType)
+{
+    if (freeType == MEM_RELEASE)
+    {
+        free(addr);
+        return TRUE;
+    }
+    // MEM_DECOMMIT: use madvise if it were mmap; with malloc it's a no-op
+    return TRUE;
+}
+
+// --- WriteFile stub ---
+inline BOOL WriteFile(HANDLE hFile, const void* buf, DWORD nBytes, DWORD* written, OVERLAPPED*)
+{
+    ssize_t r = write(reinterpret_cast<intptr_t>(hFile), buf, nBytes);
+    if (written) *written = (r > 0) ? (DWORD)r : 0;
+    return r >= 0;
+}
+
+// --- RGBQUAD ---
+struct RGBQUAD
+{
+    BYTE rgbBlue;
+    BYTE rgbGreen;
+    BYTE rgbRed;
+    BYTE rgbReserved;
+};
+
 // --- D2D1_COLOR_F stub (used in renderer interfaces) ---
 namespace D2D1
 {
@@ -577,81 +682,109 @@ namespace D2D1
     };
 }
 
+#ifndef _D2D1_COLOR_F_DEFINED
+#define _D2D1_COLOR_F_DEFINED
 struct D2D1_COLOR_F
 {
     float r, g, b, a;
 };
+#endif
 
 // --- WI_IsFlagSet / WI_SetFlag / etc. (from WIL) ---
+// Helper to get underlying type for both enums and integrals
+namespace _wil_detail {
+    template<typename T, bool = std::is_enum_v<T>>
+    struct _underlying { using type = T; };
+    template<typename T>
+    struct _underlying<T, true> { using type = std::underlying_type_t<T>; };
+    template<typename T>
+    using underlying_t = typename _underlying<T>::type;
 
-// For enum types
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+    template<typename T>
+    constexpr underlying_t<T> as_uint(T v) noexcept { return static_cast<underlying_t<T>>(v); }
+}
+
+template<typename T, typename U>
 constexpr bool WI_IsFlagSet(T val, U flag) noexcept
 {
-    using UT = std::underlying_type_t<T>;
-    return (static_cast<UT>(val) & static_cast<UT>(flag)) == static_cast<UT>(flag);
+    auto v = _wil_detail::as_uint(val);
+    auto f = static_cast<decltype(v)>(_wil_detail::as_uint(flag));
+    return (v & f) == f;
 }
 
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+template<typename T, typename U>
 constexpr bool WI_IsAnyFlagSet(T val, U flag) noexcept
 {
-    using UT = std::underlying_type_t<T>;
-    return (static_cast<UT>(val) & static_cast<UT>(flag)) != 0;
+    auto v = _wil_detail::as_uint(val);
+    auto f = static_cast<decltype(v)>(_wil_detail::as_uint(flag));
+    return (v & f) != decltype(v){0};
 }
 
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+template<typename T, typename U>
 constexpr void WI_SetFlag(T& val, U flag) noexcept
 {
-    using UT = std::underlying_type_t<T>;
-    val = static_cast<T>(static_cast<UT>(val) | static_cast<UT>(flag));
+    val = static_cast<T>(_wil_detail::as_uint(val) | static_cast<_wil_detail::underlying_t<T>>(_wil_detail::as_uint(flag)));
 }
 
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+template<typename T, typename U>
 constexpr void WI_ClearFlag(T& val, U flag) noexcept
 {
-    using UT = std::underlying_type_t<T>;
-    val = static_cast<T>(static_cast<UT>(val) & ~static_cast<UT>(flag));
+    val = static_cast<T>(_wil_detail::as_uint(val) & ~static_cast<_wil_detail::underlying_t<T>>(_wil_detail::as_uint(flag)));
 }
 
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+template<typename T, typename U>
 constexpr void WI_ToggleFlag(T& val, U flag) noexcept
 {
-    using UT = std::underlying_type_t<T>;
-    val = static_cast<T>(static_cast<UT>(val) ^ static_cast<UT>(flag));
+    val = static_cast<T>(_wil_detail::as_uint(val) ^ static_cast<_wil_detail::underlying_t<T>>(_wil_detail::as_uint(flag)));
 }
 
-template<typename T, typename U, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+template<typename T, typename U>
 constexpr void WI_UpdateFlag(T& val, U flag, bool set) noexcept
 {
     if (set) { WI_SetFlag(val, flag); } else { WI_ClearFlag(val, flag); }
 }
 
-// Overloads for plain integer types
-inline constexpr bool WI_IsFlagSet(DWORD val, DWORD flag) noexcept { return (val & flag) == flag; }
-inline constexpr bool WI_IsAnyFlagSet(DWORD val, DWORD flag) noexcept { return (val & flag) != 0; }
-inline constexpr void WI_SetFlag(DWORD& val, DWORD flag) noexcept { val |= flag; }
-inline constexpr void WI_ClearFlag(DWORD& val, DWORD flag) noexcept { val &= ~flag; }
-inline constexpr void WI_UpdateFlag(DWORD& val, DWORD flag, bool set) noexcept { if (set) val |= flag; else val &= ~flag; }
-inline constexpr bool WI_IsFlagClear(DWORD val, DWORD flag) noexcept { return (val & flag) == 0; }
-
-// Additional overloads to handle type mismatches (int passed for DWORD, etc.)
-inline constexpr bool WI_IsFlagSet(unsigned int val, int flag) noexcept { return (val & (unsigned int)flag) == (unsigned int)flag; }
-inline constexpr bool WI_IsAnyFlagSet(unsigned int val, int flag) noexcept { return (val & (unsigned int)flag) != 0; }
-inline constexpr bool WI_IsFlagSet(int val, int flag) noexcept { return (val & flag) == flag; }
-inline constexpr bool WI_IsAnyFlagSet(int val, int flag) noexcept { return (val & flag) != 0; }
-inline constexpr bool WI_IsFlagClear(int val, int flag) noexcept { return (val & flag) == 0; }
-inline constexpr bool WI_IsFlagSet(short val, short flag) noexcept { return (val & flag) == flag; }
-inline constexpr bool WI_IsAnyFlagSet(short val, short flag) noexcept { return (val & flag) != 0; }
-inline constexpr bool WI_IsFlagClear(short val, short flag) noexcept { return (val & flag) == 0; }
-inline constexpr bool WI_IsFlagSet(WORD val, WORD flag) noexcept { return (val & flag) == flag; }
-inline constexpr void WI_SetFlag(WORD& val, WORD flag) noexcept { val |= flag; }
-inline constexpr void WI_ClearFlag(WORD& val, WORD flag) noexcept { val &= ~flag; }
+template<typename T, typename U>
+constexpr bool WI_IsFlagClear(T val, U flag) noexcept
+{
+    auto v = _wil_detail::as_uint(val);
+    auto f = static_cast<decltype(v)>(_wil_detail::as_uint(flag));
+    return (v & f) == decltype(v){0};
+}
 
 // WI_SetFlagIf
 template<typename T, typename U>
 inline constexpr void WI_SetFlagIf(T& val, U flag, bool condition) noexcept
 {
-    if (condition) { val |= static_cast<T>(flag); }
+    if (condition) { WI_SetFlag(val, flag); }
+}
+
+// WI_ClearAllFlags
+template<typename T, typename U>
+inline constexpr void WI_ClearAllFlags(T& val, U flags) noexcept
+{
+    WI_ClearFlag(val, flags);
+}
+
+// WI_EnumValue
+template<typename T>
+inline constexpr auto WI_EnumValue(T val) noexcept
+{
+    return static_cast<std::underlying_type_t<T>>(val);
+}
+
+// WI_AreAllFlagsSet
+template<typename T, typename U>
+inline constexpr bool WI_AreAllFlagsSet(T val, U flags) noexcept
+{
+    return WI_IsFlagSet(val, flags);
+}
+
+// WI_AreAllFlagsClear
+template<typename T, typename U>
+inline constexpr bool WI_AreAllFlagsClear(T val, U flags) noexcept
+{
+    return WI_IsFlagClear(val, flags);
 }
 
 // --- Stub for OutputDebugStringW ---
@@ -660,6 +793,21 @@ inline void OutputDebugStringA(const char*) {}
 
 // --- GetDoubleClickTime ---
 inline UINT GetDoubleClickTime() { return 500; }
+
+// --- _BitScanForward / _BitScanReverse (MSVC intrinsics) ---
+inline unsigned char _BitScanForward(unsigned long* index, unsigned long mask)
+{
+    if (mask == 0) return 0;
+    *index = __builtin_ctzl(mask);
+    return 1;
+}
+
+inline unsigned char _BitScanReverse(unsigned long* index, unsigned long mask)
+{
+    if (mask == 0) return 0;
+    *index = 31 - __builtin_clzl(mask);
+    return 1;
+}
 
 // --- MapVirtualKey ---
 #define MAPVK_VK_TO_VSC 0
@@ -719,6 +867,7 @@ struct OVERLAPPED
 
 // --- INFINITE ---
 #define INFINITE 0xFFFFFFFF
+#define SIZE_T_MAX SIZE_MAX
 
 // --- _Null_terminated_ SAL annotation ---
 #ifndef _Null_terminated_
@@ -903,5 +1052,103 @@ inline int FindNLSStringEx(const WCHAR*, DWORD, const WCHAR* src, int srcLen,
 #ifndef _ITERATOR_DEBUG_LEVEL
 #define _ITERATOR_DEBUG_LEVEL 0
 #endif
+
+// --- Sleep ---
+#include <unistd.h>
+inline void Sleep(DWORD ms) { usleep(ms * 1000); }
+
+// --- WaitForSingleObject / CreateThread ---
+#include <pthread.h>
+#define WAIT_OBJECT_0 0
+#define WAIT_TIMEOUT 0x00000102
+#define WAIT_FAILED ((DWORD)0xFFFFFFFF)
+#define ERROR_TIMEOUT 1460
+
+inline DWORD WaitForSingleObject(HANDLE, DWORD) { return WAIT_OBJECT_0; }
+
+// CreateThread — use pthread on Linux
+using LPTHREAD_START_ROUTINE = DWORD (*)(void*);
+inline HANDLE CreateThread(void*, SIZE_T, auto proc, void* param, DWORD, DWORD*)
+{
+    pthread_t* t = new pthread_t;
+    struct ThreadData { decltype(proc) fn; void* arg; };
+    auto* data = new ThreadData{proc, param};
+    pthread_create(t, nullptr, [](void* p) -> void* {
+        auto* td = static_cast<ThreadData*>(p);
+        td->fn(td->arg);
+        delete td;
+        return nullptr;
+    }, data);
+    return reinterpret_cast<HANDLE>(t);
+}
+inline HRESULT SetThreadDescription(HANDLE, const WCHAR*) { return S_OK; }
+inline HANDLE GetModuleHandleW(const WCHAR*) { return nullptr; }
+
+// GetProcAddressByFunctionDeclaration - returns nullptr (the function won't exist on Linux)
+#define GetProcAddressByFunctionDeclaration(mod, fn) (decltype(&fn))nullptr
+
+// --- QueryUnbiasedInterruptTime ---
+inline void QueryUnbiasedInterruptTime(ULONGLONG* t)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    *t = static_cast<ULONGLONG>(ts.tv_sec) * 10000000ULL + static_cast<ULONGLONG>(ts.tv_nsec) / 100ULL;
+}
+
+// --- DWORD_MAX ---
+#define DWORD_MAX UINT32_MAX
+
+// --- E_PENDING ---
+#define E_PENDING ((HRESULT)0x8000000A)
+
+// --- WI_ASSERT ---
+#include <cassert>
+#define WI_ASSERT(cond) assert(cond)
+
+// --- sprintf_s ---
+#define sprintf_s snprintf
+
+// --- Feature flags (experimental feature stubs) ---
+struct Feature_AdjustIndistinguishableText { static constexpr bool IsEnabled() { return true; } };
+struct Feature_VtChecksumReport { static constexpr bool IsEnabled() { return false; } };
+struct Feature_ScrollbarMarks { static constexpr bool IsEnabled() { return false; } };
+struct Feature_ShellCompletions { static constexpr bool IsEnabled() { return false; } };
+
+// --- MSVC volatile intrinsics ---
+inline void __iso_volatile_store16(volatile short* p, short val) { *p = val; }
+inline void __iso_volatile_store32(volatile int* p, int val) { *p = val; }
+inline void __iso_volatile_store64(volatile long long* p, long long val) { *p = val; }
+
+// --- GetCurrentThreadId / GetSystemMetrics ---
+#include <sys/types.h>
+#include <sys/syscall.h>
+inline DWORD GetCurrentThreadId() { return static_cast<DWORD>(syscall(SYS_gettid)); }
+
+#define SM_CARETBLINKINGENABLED 0x2002
+inline int GetSystemMetrics(int) { return 1; }
+inline UINT GetCaretBlinkTime() { return 530; }
+
+// --- E_ILLEGAL_STATE_CHANGE ---
+#define E_ILLEGAL_STATE_CHANGE ((HRESULT)0x8000000E)
+
+// --- WI_SetAllFlags / WI_HasAnyFlag ---
+template<typename T, typename U>
+inline constexpr void WI_SetAllFlags(T& val, U flags) noexcept
+{
+    WI_SetFlag(val, flags);
+}
+
+// --- VkKeyScanW / GetKeyState ---
+inline SHORT VkKeyScanW(WCHAR) { return -1; }
+inline SHORT GetKeyState(int) { return 0; }
+
+// --- ToUnicodeEx / __debugbreak / UNICODE_NULL ---
+inline int ToUnicodeEx(UINT, UINT, const BYTE*, LPWSTR, int, UINT, HKL) { return 0; }
+inline void __debugbreak() { __builtin_trap(); }
+#define UNICODE_NULL ((WCHAR)0)
+
+// --- GET_KEYSTATE_WPARAM ---
+#define GET_KEYSTATE_WPARAM(wParam) ((WORD)(wParam))
+#define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
 
 #endif // __linux__

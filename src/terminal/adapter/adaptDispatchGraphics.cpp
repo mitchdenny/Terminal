@@ -101,7 +101,7 @@ void AdaptDispatch::_SetRgbColorsHelperFromSubParams(const VTParameter colorItem
                                                      TextAttribute& attr) noexcept
 {
     const auto applyColor = [&](const TextColor& color) {
-        switch (colorItem)
+        switch (static_cast<GraphicsOptions>(colorItem))
         {
         case ForegroundExtended:
             attr.SetForeground(color);
@@ -378,7 +378,7 @@ void AdaptDispatch::_ApplyGraphicsOptionWithSubParams(const VTParameter option,
     // here, we apply our "best effort" rule, while handling sub params if we don't
     // recognise the parameter substring (parameter and it's sub parameters) then
     // we should just skip over them.
-    switch (option)
+    switch (static_cast<GraphicsOptions>(option))
     {
     case Underline:
         _SetUnderlineStyleHelper(subParams.at(0), attr);
