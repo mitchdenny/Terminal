@@ -173,6 +173,22 @@ target_link_libraries(terminal_core PUBLIC
     terminal_types
 )
 
+# --- Static library: linux_pty ---
+add_library(linux_pty STATIC
+    src/linux/LinuxPtyConnection.cpp
+)
+target_include_directories(linux_pty PUBLIC
+    ${TERMINAL_SRC}/linux
+)
+target_link_libraries(linux_pty PUBLIC util)
+
+# --- Test executable: pty_test ---
+# Minimal test that launches a shell via PTY and echoes output
+add_executable(pty_test
+    src/linux/pty_test.cpp
+)
+target_link_libraries(pty_test PRIVATE linux_pty)
+
 # TODO: Phase 2 - OpenGL renderer library
 # TODO: Phase 3 - GTK4 terminal widget
 # TODO: Phase 4 - Main executable
