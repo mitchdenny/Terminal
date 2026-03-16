@@ -116,6 +116,8 @@ namespace Microsoft::Terminal::Connection
             // Set environment variables
             setenv("TERM", "xterm-256color", 1);
             setenv("COLORTERM", "truecolor", 1);
+            setenv("TERM_PROGRAM", "WindowsTerminal", 1);
+            setenv("TERM_PROGRAM_VERSION", "linux-port", 1);
             for (const auto& envVar : _environment)
             {
                 auto eq = envVar.find('=');
