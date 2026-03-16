@@ -259,6 +259,7 @@ static void colorrefToRgb(COLORREF c, double& r, double& g, double& b)
 }
 
 // Convert a wstring_view (32-bit wchar_t on Linux) to a valid UTF-8 string
+// Skips control characters (< 0x20, 0x7F) to avoid rendering placeholders
 static std::string wcharToUtf8(std::wstring_view wstr)
 {
     std::string result;
@@ -269,6 +270,11 @@ static std::string wcharToUtf8(std::wstring_view wstr)
         if (cp == 0)
         {
             break;
+        }
+        // Skip C0/C1 control characters and DEL
+        if (cp < 0x20 || cp == 0x7F || (cp >= 0x80 && cp < 0xA0))
+        {
+            continue;
         }
         else if (cp < 0x80)
         {
@@ -384,8 +390,14 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
 
             auto glyph = textRow.GlyphAt(col);
 
-            // Skip empty/space cells
-            if (glyph.empty() || (glyph.size() == 1 && (glyph[0] == L' ' || glyph[0] == L'\0')))
+            // Skip empty/space/control character cells
+            if (glyph.empty() || (glyph.size() == 1 && (glyph[0] <= L' ' || glyph[0] == 0x7F)))
+            {
+                ++col;
+                continue;
+            }
+            // Also skip any glyph that starts with a control character
+            if (glyph[0] < L' ' || glyph[0] == 0x7F)
             {
                 ++col;
                 continue;
