@@ -77,6 +77,18 @@ void TerminalWindow::SetupWindow(GtkApplication* app)
     g_signal_connect(scrollController, "scroll", G_CALLBACK(OnScrolled), this);
     gtk_widget_add_controller(_drawingArea, scrollController);
 
+    // Mouse click controller
+    auto* clickGesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(clickGesture), 0); // all buttons
+    g_signal_connect(clickGesture, "pressed", G_CALLBACK(OnMousePressed), this);
+    g_signal_connect(clickGesture, "released", G_CALLBACK(OnMouseReleased), this);
+    gtk_widget_add_controller(_drawingArea, GTK_EVENT_CONTROLLER(clickGesture));
+
+    // Mouse motion controller
+    auto* motionController = gtk_event_controller_motion_new();
+    g_signal_connect(motionController, "motion", G_CALLBACK(OnMouseMoved), this);
+    gtk_widget_add_controller(_drawingArea, motionController);
+
     // Resize signal
     g_signal_connect(_drawingArea, "resize", G_CALLBACK(OnResize), this);
 
@@ -708,6 +720,155 @@ void TerminalWindow::HandleScroll(double dx, double dy)
     if (lines != 0)
     {
         _terminal.UserScrollViewport(lines);
+        QueueRedraw();
+    }
+}
+
+// ---- Mouse Input ----
+
+til::point TerminalWindow::PixelToCell(double x, double y) const
+{
+    return {
+        static_cast<til::CoordType>(std::max(0.0, x) / _cellWidth),
+        static_cast<til::CoordType>(std::max(0.0, y) / _cellHeight)
+    };
+}
+
+ControlKeyStates TerminalWindow::GdkModsToControlKeys(GdkModifierType mods) const
+{
+    ControlKeyStates states;
+    if (mods & GDK_SHIFT_MASK) { states |= ControlKeyStates::ShiftPressed; }
+    if (mods & GDK_CONTROL_MASK) { states |= ControlKeyStates::LeftCtrlPressed; }
+    if (mods & GDK_ALT_MASK) { states |= ControlKeyStates::LeftAltPressed; }
+    return states;
+}
+
+void TerminalWindow::OnMousePressed(GtkGestureClick* gesture, int nPress, double x, double y, gpointer userData)
+{
+    auto* self = static_cast<TerminalWindow*>(userData);
+    auto button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
+    auto mods = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+    self->HandleMousePress(button, nPress, x, y, mods);
+}
+
+void TerminalWindow::OnMouseReleased(GtkGestureClick* gesture, int nPress, double x, double y, gpointer userData)
+{
+    auto* self = static_cast<TerminalWindow*>(userData);
+    auto button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
+    auto mods = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+    self->HandleMouseRelease(button, x, y, mods);
+}
+
+void TerminalWindow::OnMouseMoved(GtkEventControllerMotion* controller, double x, double y, gpointer userData)
+{
+    auto* self = static_cast<TerminalWindow*>(userData);
+    auto mods = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+    self->HandleMouseMove(x, y, mods);
+}
+
+void TerminalWindow::HandleMousePress(int button, int nPress, double x, double y, GdkModifierType mods)
+{
+    auto cellPos = PixelToCell(x, y);
+    auto lock = _terminal.LockForWriting();
+
+    // Map GTK button numbers: 1=left, 2=middle, 3=right
+    Microsoft::Console::VirtualTerminal::TerminalInput::MouseButtonState buttonState{
+        button == 1 || _mouseLeftDown,
+        button == 2 || _mouseMiddleDown,
+        button == 3 || _mouseRightDown
+    };
+
+    if (button == 1) { _mouseLeftDown = true; }
+    if (button == 2) { _mouseMiddleDown = true; }
+    if (button == 3) { _mouseRightDown = true; }
+
+    // Try sending to terminal first (for apps like vim, htop that track mouse)
+    if (_terminal.IsTrackingMouseInput())
+    {
+        unsigned int winButton = WM_LBUTTONDOWN;
+        if (button == 2) { winButton = WM_MBUTTONDOWN; }
+        if (button == 3) { winButton = WM_RBUTTONDOWN; }
+
+        auto output = _terminal.SendMouseEvent(cellPos, winButton, GdkModsToControlKeys(mods), 0, buttonState);
+        if (output.has_value())
+        {
+            _pty.WriteInput(*output);
+            QueueRedraw();
+            return;
+        }
+    }
+
+    // Otherwise handle as selection
+    if (button == 1)
+    {
+        if (nPress == 1)
+        {
+            _terminal.SetSelectionAnchor(cellPos);
+        }
+        else if (nPress == 2)
+        {
+            _terminal.MultiClickSelection(cellPos, Terminal::SelectionExpansion::Word);
+        }
+        else if (nPress >= 3)
+        {
+            _terminal.MultiClickSelection(cellPos, Terminal::SelectionExpansion::Line);
+        }
+        QueueRedraw();
+    }
+}
+
+void TerminalWindow::HandleMouseRelease(int button, double x, double y, GdkModifierType mods)
+{
+    auto cellPos = PixelToCell(x, y);
+    auto lock = _terminal.LockForWriting();
+
+    if (button == 1) { _mouseLeftDown = false; }
+    if (button == 2) { _mouseMiddleDown = false; }
+    if (button == 3) { _mouseRightDown = false; }
+
+    if (_terminal.IsTrackingMouseInput())
+    {
+        Microsoft::Console::VirtualTerminal::TerminalInput::MouseButtonState buttonState{
+            _mouseLeftDown, _mouseMiddleDown, _mouseRightDown
+        };
+
+        unsigned int winButton = WM_LBUTTONUP;
+        if (button == 2) { winButton = WM_MBUTTONUP; }
+        if (button == 3) { winButton = WM_RBUTTONUP; }
+
+        auto output = _terminal.SendMouseEvent(cellPos, winButton, GdkModsToControlKeys(mods), 0, buttonState);
+        if (output.has_value())
+        {
+            _pty.WriteInput(*output);
+        }
+    }
+    QueueRedraw();
+}
+
+void TerminalWindow::HandleMouseMove(double x, double y, GdkModifierType mods)
+{
+    auto cellPos = PixelToCell(x, y);
+    auto lock = _terminal.LockForWriting();
+
+    if (_terminal.IsTrackingMouseInput() && (_mouseLeftDown || _mouseMiddleDown || _mouseRightDown))
+    {
+        Microsoft::Console::VirtualTerminal::TerminalInput::MouseButtonState buttonState{
+            _mouseLeftDown, _mouseMiddleDown, _mouseRightDown
+        };
+
+        auto output = _terminal.SendMouseEvent(cellPos, WM_MOUSEMOVE, GdkModsToControlKeys(mods), 0, buttonState);
+        if (output.has_value())
+        {
+            _pty.WriteInput(*output);
+            QueueRedraw();
+            return;
+        }
+    }
+
+    // Selection drag
+    if (_mouseLeftDown)
+    {
+        _terminal.SetSelectionEnd(cellPos);
         QueueRedraw();
     }
 }

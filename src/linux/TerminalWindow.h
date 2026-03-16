@@ -11,12 +11,14 @@
 #endif
 
 #include "../../cascadia/TerminalCore/Terminal.hpp"
+#include "../../cascadia/TerminalCore/ControlKeyStates.hpp"
 #include "../../renderer/inc/IRenderData.hpp"
 #include "../../renderer/base/renderer.hpp"
 #include "LinuxPtyConnection.h"
 #include "Settings.h"
 
 #include <gtk/gtk.h>
+#include <gdk/gdk.h>
 #include <pango/pangocairo.h>
 
 #include <string>
@@ -45,12 +47,22 @@ namespace Linux
         static void OnResize(GtkDrawingArea* area, int width, int height, gpointer userData);
         static gboolean OnTickCallback(GtkWidget* widget, GdkFrameClock* clock, gpointer userData);
 
+        // Mouse handlers
+        static void OnMousePressed(GtkGestureClick* gesture, int nPress, double x, double y, gpointer userData);
+        static void OnMouseReleased(GtkGestureClick* gesture, int nPress, double x, double y, gpointer userData);
+        static void OnMouseMoved(GtkEventControllerMotion* controller, double x, double y, gpointer userData);
+
         // Instance methods
         void SetupWindow(GtkApplication* app);
         void DrawTerminal(cairo_t* cr, int widthPx, int heightPx);
         void HandleKeyPress(guint keyval, guint keycode, GdkModifierType state);
+        void HandleMousePress(int button, int nPress, double x, double y, GdkModifierType mods);
+        void HandleMouseRelease(int button, double x, double y, GdkModifierType mods);
+        void HandleMouseMove(double x, double y, GdkModifierType mods);
         void HandleScroll(double dx, double dy);
         void HandleResize(int widthPx, int heightPx);
+        til::point PixelToCell(double x, double y) const;
+        Microsoft::Terminal::Core::ControlKeyStates GdkModsToControlKeys(GdkModifierType mods) const;
         void QueueRedraw();
         void UpdateTitle(const std::wstring& title);
 
@@ -83,6 +95,9 @@ namespace Linux
         std::atomic<bool> _needsRedraw{false};
         std::atomic<bool> _running{true};
         std::string _windowTitle = "Windows Terminal (Linux)";
+        bool _mouseLeftDown = false;
+        bool _mouseMiddleDown = false;
+        bool _mouseRightDown = false;
 
         // Settings
         TerminalSettings _settings;
