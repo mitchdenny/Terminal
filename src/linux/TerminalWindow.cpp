@@ -258,6 +258,45 @@ static void colorrefToRgb(COLORREF c, double& r, double& g, double& b)
     b = static_cast<double>((c >> 16) & 0xFF) / 255.0;
 }
 
+// Convert a wstring_view (32-bit wchar_t on Linux) to a valid UTF-8 string
+static std::string wcharToUtf8(std::wstring_view wstr)
+{
+    std::string result;
+    result.reserve(wstr.size() * 3);
+    for (wchar_t wc : wstr)
+    {
+        uint32_t cp = static_cast<uint32_t>(wc);
+        if (cp == 0)
+        {
+            break;
+        }
+        else if (cp < 0x80)
+        {
+            result += static_cast<char>(cp);
+        }
+        else if (cp < 0x800)
+        {
+            result += static_cast<char>(0xC0 | (cp >> 6));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+        else if (cp < 0x10000)
+        {
+            if (cp >= 0xD800 && cp <= 0xDFFF) { continue; }
+            result += static_cast<char>(0xE0 | (cp >> 12));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+        else if (cp <= 0x10FFFF)
+        {
+            result += static_cast<char>(0xF0 | (cp >> 18));
+            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+    }
+    return result;
+}
+
 void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
 {
     auto lock = _terminal.LockForWriting();
@@ -281,7 +320,7 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
     auto cursorPos = buffer.GetCursor().GetPosition();
     bool cursorVisible = buffer.GetCursor().IsVisible();
 
-    // Static blink toggle
+    // Blink toggle
     static bool blinkPhase = true;
     static gint64 lastToggle = 0;
     gint64 now = g_get_monotonic_time();
@@ -300,7 +339,7 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
 
         if (y >= heightPx) { break; }
 
-        // Render each cell in the row
+        // First pass: draw backgrounds for cells with non-default bg
         til::CoordType col = 0;
         while (col < viewport.Width())
         {
@@ -310,81 +349,50 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
             auto attr = textRow.GetAttrByColumn(col);
             auto [fg, bg] = renderSettings.GetAttributeColors(attr);
 
-            // Find run of cells with same attributes
-            til::CoordType runEnd = col + 1;
-            while (runEnd < viewport.Width())
-            {
-                auto nextAttr = textRow.GetAttrByColumn(runEnd);
-                auto [nfg, nbg] = renderSettings.GetAttributeColors(nextAttr);
-                if (nfg != fg || nbg != bg || nextAttr.IsIntense() != attr.IsIntense() ||
-                    nextAttr.IsItalic() != attr.IsItalic() || nextAttr.IsUnderlined() != attr.IsUnderlined())
-                {
-                    break;
-                }
-                ++runEnd;
-            }
-
-            til::CoordType runLen = runEnd - col;
-
-            // Draw background for run
             if (bg != defBg)
             {
+                // Find run of same background for efficiency
+                til::CoordType runEnd = col + 1;
+                while (runEnd < viewport.Width())
+                {
+                    auto nextAttr = textRow.GetAttrByColumn(runEnd);
+                    auto [nfg, nbg] = renderSettings.GetAttributeColors(nextAttr);
+                    if (nbg != bg) { break; }
+                    ++runEnd;
+                }
+
                 double r, g, b;
                 colorrefToRgb(bg, r, g, b);
                 cairo_set_source_rgb(cr, r, g, b);
-                cairo_rectangle(cr, x, y, runLen * _cellWidth, _cellHeight);
+                cairo_rectangle(cr, x, y, (runEnd - col) * _cellWidth, _cellHeight);
                 cairo_fill(cr);
+
+                col = runEnd;
+            }
+            else
+            {
+                ++col;
+            }
+        }
+
+        // Second pass: draw text cell-by-cell at exact grid positions
+        col = 0;
+        while (col < viewport.Width())
+        {
+            int x = col * _cellWidth;
+            if (x >= widthPx) { break; }
+
+            auto glyph = textRow.GlyphAt(col);
+
+            // Skip empty/space cells
+            if (glyph.empty() || (glyph.size() == 1 && (glyph[0] == L' ' || glyph[0] == L'\0')))
+            {
+                ++col;
+                continue;
             }
 
-            // Build text string for the run
-            std::string utf8Run;
-            utf8Run.reserve(runLen * 4);
-            for (til::CoordType c = col; c < runEnd; ++c)
-            {
-                auto glyph = textRow.GlyphAt(c);
-                if (glyph.empty() || glyph[0] == L'\0' || glyph[0] == L' ')
-                {
-                    utf8Run += ' ';
-                }
-                else
-                {
-                    // Convert wchar_t (32-bit on Linux) to UTF-8
-                    for (wchar_t wc : glyph)
-                    {
-                        if (wc == 0) { break; }
-                        uint32_t cp = static_cast<uint32_t>(wc);
-                        if (cp < 0x80)
-                        {
-                            utf8Run += static_cast<char>(cp);
-                        }
-                        else if (cp < 0x800)
-                        {
-                            utf8Run += static_cast<char>(0xC0 | (cp >> 6));
-                            utf8Run += static_cast<char>(0x80 | (cp & 0x3F));
-                        }
-                        else if (cp < 0x10000)
-                        {
-                            // Skip surrogates and invalid codepoints
-                            if (cp >= 0xD800 && cp <= 0xDFFF) { utf8Run += ' '; continue; }
-                            utf8Run += static_cast<char>(0xE0 | (cp >> 12));
-                            utf8Run += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                            utf8Run += static_cast<char>(0x80 | (cp & 0x3F));
-                        }
-                        else if (cp <= 0x10FFFF)
-                        {
-                            utf8Run += static_cast<char>(0xF0 | (cp >> 18));
-                            utf8Run += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-                            utf8Run += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                            utf8Run += static_cast<char>(0x80 | (cp & 0x3F));
-                        }
-                        else
-                        {
-                            // Invalid codepoint, replace with space
-                            utf8Run += ' ';
-                        }
-                    }
-                }
-            }
+            auto attr = textRow.GetAttrByColumn(col);
+            auto [fg, bg] = renderSettings.GetAttributeColors(attr);
 
             // Set font style
             pango_font_description_set_weight(_fontDesc,
@@ -393,12 +401,20 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
                 attr.IsItalic() ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL);
             pango_layout_set_font_description(layout, _fontDesc);
 
-            // Draw text
+            // Convert glyph to UTF-8
+            std::string utf8 = wcharToUtf8(glyph);
+            if (utf8.empty())
+            {
+                ++col;
+                continue;
+            }
+
+            // Set text color and render at exact grid position
             double fgR, fgG, fgB;
             colorrefToRgb(fg, fgR, fgG, fgB);
             cairo_set_source_rgb(cr, fgR, fgG, fgB);
             cairo_move_to(cr, x, y);
-            pango_layout_set_text(layout, utf8Run.c_str(), utf8Run.size());
+            pango_layout_set_text(layout, utf8.c_str(), utf8.size());
             pango_cairo_show_layout(cr, layout);
 
             // Draw underline
@@ -406,7 +422,7 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
             {
                 cairo_set_line_width(cr, 1.0);
                 cairo_move_to(cr, x, y + _cellHeight - 1.5);
-                cairo_line_to(cr, x + runLen * _cellWidth, y + _cellHeight - 1.5);
+                cairo_line_to(cr, x + _cellWidth, y + _cellHeight - 1.5);
                 cairo_stroke(cr);
             }
 
@@ -415,11 +431,11 @@ void TerminalWindow::DrawTerminal(cairo_t* cr, int widthPx, int heightPx)
             {
                 cairo_set_line_width(cr, 1.0);
                 cairo_move_to(cr, x, y + _cellHeight / 2);
-                cairo_line_to(cr, x + runLen * _cellWidth, y + _cellHeight / 2);
+                cairo_line_to(cr, x + _cellWidth, y + _cellHeight / 2);
                 cairo_stroke(cr);
             }
 
-            col = runEnd;
+            ++col;
         }
     }
 

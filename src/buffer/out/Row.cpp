@@ -247,7 +247,14 @@ void ROW::_init() noexcept
 
     // Fills _charsBuffer with whitespace and correspondingly _charOffsets
     // with successive numbers from 0 to _columnCount+1.
-#if defined(TIL_SSE_INTRINSICS)
+#if defined(__linux__)
+    // On Linux, wchar_t is 4 bytes so the SIMD paths (which assume 2-byte wchar_t)
+    // would corrupt the chars buffer. Use scalar init instead.
+    // The _charOffsets array is uint16_t regardless, so SIMD is fine for it,
+    // but for simplicity we use the scalar path for both.
+    std::fill_n(_charsBuffer, _columnCount, UNICODE_SPACE);
+    std::iota(_charOffsets.begin(), _charOffsets.end(), uint16_t{ 0 });
+#elif defined(TIL_SSE_INTRINSICS)
     alignas(__m256i) static constexpr uint16_t whitespaceData[]{ 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20 };
     alignas(__m256i) static constexpr uint16_t offsetsData[]{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
     alignas(__m256i) static constexpr uint16_t increment16Data[]{ 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 };
