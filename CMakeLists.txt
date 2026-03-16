@@ -75,6 +75,7 @@ target_include_directories(terminal_types PUBLIC
     ${TERMINAL_SRC}/types/inc
     ${TERMINAL_SRC}/types
 )
+target_link_libraries(terminal_types PUBLIC fmt::fmt)
 
 # --- Static library: terminal_buffer ---
 add_library(terminal_buffer STATIC
@@ -116,6 +117,20 @@ target_include_directories(vt_parser PUBLIC
     ${TERMINAL_SRC}/types/inc
 )
 target_link_libraries(vt_parser PUBLIC terminal_types)
+
+# --- Static library: terminal_input ---
+add_library(terminal_input STATIC
+    src/terminal/input/terminalInput.cpp
+    src/terminal/input/mouseInput.cpp
+)
+target_include_directories(terminal_input PUBLIC
+    ${TERMINAL_SRC}/terminal/input
+    ${TERMINAL_SRC}/terminal/input/lib
+    ${TERMINAL_SRC}/terminal/adapter
+    ${TERMINAL_SRC}/terminal/parser
+    ${TERMINAL_SRC}/terminal/parser/lib
+)
+target_link_libraries(terminal_input PUBLIC terminal_types vt_parser)
 
 # --- Static library: vt_adapter ---
 add_library(vt_adapter STATIC
@@ -169,6 +184,7 @@ target_link_libraries(terminal_core PUBLIC
     vt_parser
     vt_adapter
     terminal_buffer
+    terminal_input
     renderer_base
     terminal_types
 )
@@ -176,6 +192,7 @@ target_link_libraries(terminal_core PUBLIC
 # --- Static library: linux_pty ---
 add_library(linux_pty STATIC
     src/linux/LinuxPtyConnection.cpp
+    src/linux/stubs.cpp
 )
 target_include_directories(linux_pty PUBLIC
     ${TERMINAL_SRC}/linux
@@ -188,6 +205,20 @@ add_executable(pty_test
     src/linux/pty_test.cpp
 )
 target_link_libraries(pty_test PRIVATE linux_pty)
+
+# --- Integration test: Full pipeline test ---
+add_executable(integration_test
+    src/linux/integration_test.cpp
+)
+target_include_directories(integration_test PRIVATE
+    ${TERMINAL_SRC}/linux
+    ${TERMINAL_SRC}/cascadia/TerminalCore
+)
+target_link_libraries(integration_test PRIVATE
+    terminal_core
+    linux_pty
+    fmt::fmt
+)
 
 # TODO: Phase 2 - OpenGL renderer library
 # TODO: Phase 3 - GTK4 terminal widget

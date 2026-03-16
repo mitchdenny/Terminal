@@ -273,6 +273,13 @@ struct CHAR_INFO
 #define VK_RCONTROL 0xA3
 #define VK_LMENU 0xA4
 #define VK_RMENU 0xA5
+#define VK_VOLUME_MUTE 0xAD
+#define VK_VOLUME_DOWN 0xAE
+#define VK_VOLUME_UP 0xAF
+#define VK_MEDIA_NEXT_TRACK 0xB0
+#define VK_MEDIA_PREV_TRACK 0xB1
+#define VK_MEDIA_STOP 0xB2
+#define VK_MEDIA_PLAY_PAUSE 0xB3
 #define VK_OEM_1 0xBA
 #define VK_OEM_PLUS 0xBB
 #define VK_OEM_COMMA 0xBC
@@ -285,8 +292,36 @@ struct CHAR_INFO
 #define VK_OEM_6 0xDD
 #define VK_OEM_7 0xDE
 #define VK_OEM_8 0xDF
+#define VK_PACKET 0xE7
 
 // --- Key event flags ---
+// --- Windows message constants (for mouse/keyboard input) ---
+#define WM_MOUSEMOVE 0x0200
+#define WM_LBUTTONDOWN 0x0201
+#define WM_LBUTTONUP 0x0202
+#define WM_LBUTTONDBLCLK 0x0203
+#define WM_RBUTTONDOWN 0x0204
+#define WM_RBUTTONUP 0x0205
+#define WM_RBUTTONDBLCLK 0x0206
+#define WM_MBUTTONDOWN 0x0207
+#define WM_MBUTTONUP 0x0208
+#define WM_MBUTTONDBLCLK 0x0209
+#define WM_MOUSEWHEEL 0x020A
+#define WM_XBUTTONDOWN 0x020B
+#define WM_XBUTTONUP 0x020C
+#define WM_MOUSEHWHEEL 0x020E
+#define WM_KEYDOWN 0x0100
+#define WM_KEYUP 0x0101
+#define WM_CHAR 0x0102
+#define WM_SYSKEYDOWN 0x0104
+#define WM_SYSKEYUP 0x0105
+#define MK_LBUTTON 0x0001
+#define MK_RBUTTON 0x0002
+#define MK_SHIFT 0x0004
+#define MK_CONTROL 0x0008
+#define MK_MBUTTON 0x0010
+#define XBUTTON1 0x0001
+#define XBUTTON2 0x0002
 #define LEFT_CTRL_PRESSED 0x0008
 #define RIGHT_CTRL_PRESSED 0x0004
 #define LEFT_ALT_PRESSED 0x0002
@@ -1113,6 +1148,7 @@ struct Feature_AdjustIndistinguishableText { static constexpr bool IsEnabled() {
 struct Feature_VtChecksumReport { static constexpr bool IsEnabled() { return false; } };
 struct Feature_ScrollbarMarks { static constexpr bool IsEnabled() { return false; } };
 struct Feature_ShellCompletions { static constexpr bool IsEnabled() { return false; } };
+struct Feature_KeypadModeEnabled { static constexpr bool IsEnabled() { return false; } };
 
 // --- MSVC volatile intrinsics ---
 inline void __iso_volatile_store16(volatile short* p, short val) { *p = val; }
@@ -1150,5 +1186,50 @@ inline void __debugbreak() { __builtin_trap(); }
 // --- GET_KEYSTATE_WPARAM ---
 #define GET_KEYSTATE_WPARAM(wParam) ((WORD)(wParam))
 #define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
+#define GET_XBUTTON_WPARAM(wParam) HIWORD(wParam)
+#define WHEEL_DELTA 120
+
+// --- WI_ClearFlagIf ---
+template<typename T, typename U>
+inline constexpr void WI_ClearFlagIf(T& val, U flag, bool condition) noexcept
+{
+    if (condition) { WI_ClearFlag(val, flag); }
+}
+
+// --- GetTickCount64 ---
+inline uint64_t GetTickCount64()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<uint64_t>(ts.tv_sec) * 1000ULL + static_cast<uint64_t>(ts.tv_nsec) / 1000000ULL;
+}
+
+// --- GetKeyboardLayout ---
+inline HKL GetKeyboardLayout(DWORD) { return nullptr; }
+
+// --- SHORT_MAX ---
+#define SHORT_MAX SHRT_MAX
+
+// --- ARRAYSIZE ---
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0]))
+#endif
+
+// --- LCMapStringW / LoadKeyboardLayoutW / MapVirtualKeyExW ---
+#define LOCALE_INVARIANT 0x007f
+#define LCMAP_LOWERCASE 0x00000100
+inline int LCMapStringW(DWORD locale, DWORD flags, const WCHAR* src, int srcLen, WCHAR* dst, int dstLen)
+{
+    if (!dst || dstLen == 0) return srcLen;
+    for (int i = 0; i < srcLen && i < dstLen; i++)
+    {
+        dst[i] = (flags & LCMAP_LOWERCASE) ? towlower(src[i]) : src[i];
+    }
+    return srcLen < dstLen ? srcLen : dstLen;
+}
+inline HKL LoadKeyboardLayoutW(const WCHAR*, UINT) { return nullptr; }
+inline UINT MapVirtualKeyExW(UINT code, UINT mapType, HKL) { return MapVirtualKeyW(code, mapType); }
+inline HWND GetForegroundWindow() { return nullptr; }
+inline DWORD GetWindowThreadProcessId(HWND, DWORD*) { return 0; }
 
 #endif // __linux__
